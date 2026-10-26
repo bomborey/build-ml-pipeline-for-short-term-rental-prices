@@ -1,4 +1,30 @@
 # Build an ML Pipeline for Short-Term Rental Prices in NYC
+
+## Project links (submission)
+
+- **W&B project (public):** https://wandb.ai/reyrosales-macewan-university/nyc_airbnb
+- **Source repository:** https://github.com/bomborey/build-ml-pipeline-for-short-term-rental-prices
+- **Repository platform:** GitHub
+
+## What this submission implements
+
+- `EDA.ipynb`: fetches `sample.csv:latest` from W&B, profiles it, filters prices to the inclusive $10 to $350 range, converts `last_review` to datetime, and explains why missing values are left for the inference pipeline.
+- `src/basic_cleaning`: MLflow component that reproduces the EDA cleaning, logs each operation, and uploads `clean_sample.csv` (type `clean_sample`). Release 1.0.1 adds the NYC geographic boundary filter.
+- `src/data_check/test_data.py`: adds `test_row_count` and `test_price_range` to the provided tests.
+- `src/train_random_forest/run.py`: downloads `trainval_data.csv`, builds the `non_ordinal_categorical_preproc` and `sk_pipe` pipelines, fits, exports with MLflow, uploads `random_forest_export`, and logs `r2` and `mae`.
+- `main.py`: wires up `basic_cleaning`, `data_check`, `data_split`, `train_random_forest` and `test_regression_model`, reading every parameter from `config.yaml`.
+
+## Possible improvements for future releases
+
+- Engineer more features in the EDA (distance to Manhattan landmarks, host-level aggregates, neighbourhood target encoding) and move them into the inference pipeline.
+- Try gradient boosted trees (LightGBM or XGBoost) as an alternative training component and compare MAE in W&B.
+- Replace the grid search with a Bayesian sweep (Hydra Optuna sweeper) over more Random Forest parameters such as `max_depth` and `min_samples_leaf`.
+- Add data tests for `minimum_nights` and `availability_365` ranges and for duplicate listing ids.
+- Monitor drift on more columns than `neighbourhood_group` before each weekly retrain.
+
+---
+
+## Original project instructions
 You are working for a property management company renting rooms and properties for short periods of 
 time on various rental platforms. You need to estimate the typical price for a given property based 
 on the price of similar properties. Your company receives new data in bulk every week. The model needs 
@@ -74,7 +100,7 @@ For GitHub, open the
 and click **Fork**. Then clone your fork:
 
 ```bash
-git clone https://github.com/<your-github-username>/build-ml-pipeline-for-short-term-rental-prices.git
+git clone https://github.com/bomborey/build-ml-pipeline-for-short-term-rental-prices.git
 ```
 
 For Azure Repos, use **Import repository** to import the same official public starter URL:
