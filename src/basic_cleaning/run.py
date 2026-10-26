@@ -33,6 +33,13 @@ def go(args):
     logger.info("Converting last_review to datetime")
     df["last_review"] = pd.to_datetime(df["last_review"])
 
+    # Drop listings outside the NYC area (added in release 1.0.1 after sample2.csv
+    # failed the test_proper_boundaries data test)
+    logger.info("Removing listings outside the NYC geographic boundaries")
+    idx = df["longitude"].between(-74.25, -73.50) & df["latitude"].between(40.5, 41.2)
+    df = df[idx].copy()
+    logger.info("%d rows remain after boundary filtering", df.shape[0])
+
     # NOTE: missing values are intentionally NOT imputed here. Imputation is part of
     # the inference pipeline so the same logic is applied at prediction time.
 
