@@ -36,3 +36,9 @@ modeling:
     max_features: 0.33
     # DO not change the following
     oob_score: true
+evaluation:
+  # Overfitting check run after test_regression_model (see README, "Test vs validation check").
+  # Maximum allowed increase of test MAE over validation MAE, in percent
+  max_mae_increase_pct: 10
+  # Maximum allowed drop of test r2 compared to validation r2 (absolute)
+  max_r2_drop: 0.05

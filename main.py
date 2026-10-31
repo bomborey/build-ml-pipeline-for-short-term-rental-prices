@@ -131,6 +131,91 @@ def go(config: DictConfig):
                 },
             )
 
+            # Explicitly compare test-set performance with validation-set performance
+            # of the same "prod" model, and fail the pipeline if the model overfits
+            verify_test_vs_validation(config)
+
+
+def verify_test_vs_validation(config: DictConfig):
+    """
+    Compare the test-set metrics of the "prod" model (logged by test_regression_model)
+    with the validation-set metrics logged by the train_random_forest run that produced it.
+
+    The check passes when:
+      * test MAE <= validation MAE * (1 + max_mae_increase_pct / 100)
+      * test r2  >= validation r2 - max_r2_drop
+    Tolerances come from the "evaluation" section of config.yaml (see README for the rationale).
+    """
+    api = wandb.Api()
+    entity = os.environ.get("WANDB_ENTITY") or api.default_entity
+    project = config["main"]["project_name"]
+
+    # 1. Validation metrics: summary of the training run that logged the prod model
+    prod_model = api.artifact(f"{entity}/{project}/random_forest_export:prod")
+    train_run = prod_model.logged_by()
+    val_r2 = float(train_run.summary["r2"])
+    val_mae = float(train_run.summary["mae"])
+
+    # 2. Test metrics: most recent finished test_model run that used this prod model
+    test_runs = [
+        r for r in prod_model.used_by()
+        if r.job_type == "test_model" and r.state == "finished" and "mae" in r.summary
+    ]
+    if not test_runs:
+        raise RuntimeError("No finished test_regression_model run found for random_forest_export:prod")
+    test_run = max(test_runs, key=lambda r: r.created_at)
+    test_r2 = float(test_run.summary["r2"])
+    test_mae = float(test_run.summary["mae"])
+
+    # 3. Compare against the configured tolerances
+    max_mae_increase_pct = float(config["evaluation"]["max_mae_increase_pct"])
+    max_r2_drop = float(config["evaluation"]["max_r2_drop"])
+
+    mae_increase_pct = (test_mae - val_mae) / val_mae * 100
+    r2_drop = val_r2 - test_r2
+    mae_ok = mae_increase_pct <= max_mae_increase_pct
+    r2_ok = r2_drop <= max_r2_drop
+    passed = mae_ok and r2_ok
+
+    verdict = "PASSED: no overfitting detected" if passed else "FAILED: test performance degrades beyond tolerance"
+    lines = [
+        "# Test vs validation performance check",
+        "",
+        f"Model: `random_forest_export:{prod_model.version}` (alias `prod`), "
+        f"trained in run `{train_run.name}`, tested in run `{test_run.name}`",
+        "",
+        "| Metric | Validation | Test | Difference | Tolerance | Result |",
+        "|---|---|---|---|---|---|",
+        f"| MAE | {val_mae:.2f} | {test_mae:.2f} | {mae_increase_pct:+.1f}% | <= +{max_mae_increase_pct:.0f}% | {'OK' if mae_ok else 'FAIL'} |",
+        f"| r2 | {val_r2:.3f} | {test_r2:.3f} | {-r2_drop:+.3f} | drop <= {max_r2_drop:.2f} | {'OK' if r2_ok else 'FAIL'} |",
+        "",
+        f"**{verdict}**",
+    ]
+    report = "\n".join(lines) + "\n"
+    print("\n" + report)
+
+    # Save the report in the repository root so it is versioned with the code
+    with open(os.path.join(hydra.utils.get_original_cwd(), "test_vs_validation.md"), "w") as fp:
+        fp.write(report)
+
+    # Log the comparison to W&B as well
+    run = wandb.init(project=project, job_type="test_vs_validation")
+    run.summary.update({
+        "val_mae": val_mae, "test_mae": test_mae, "mae_increase_pct": mae_increase_pct,
+        "val_r2": val_r2, "test_r2": test_r2, "r2_drop": r2_drop, "passed": passed,
+    })
+    run.log({"test_vs_validation": wandb.Table(
+        columns=["metric", "validation", "test", "difference", "tolerance", "ok"],
+        data=[
+            ["mae", val_mae, test_mae, f"{mae_increase_pct:+.1f}%", f"<= +{max_mae_increase_pct}%", mae_ok],
+            ["r2", val_r2, test_r2, f"{-r2_drop:+.3f}", f"drop <= {max_r2_drop}", r2_ok],
+        ],
+    )})
+    run.finish()
+
+    if not passed:
+        raise RuntimeError(verdict)
+
 
 if __name__ == "__main__":
     go()

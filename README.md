@@ -725,3 +725,25 @@ unimplemented TODO branches are still incomplete even when `mlflow run .` return
 ## License
 
 [License](LICENSE.txt)
+
+## Test vs validation check (overfitting)
+
+The `test_regression_model` step in `main.py` is followed by `verify_test_vs_validation()`, which:
+
+1. Loads the `random_forest_export:prod` model artifact from W&B and reads the validation `r2` and `mae` from the `train_random_forest` run that produced it.
+2. Reads the test `r2` and `mae` from the latest `test_model` run that used that same model.
+3. Compares them against the tolerances in the `evaluation` section of `config.yaml`, logs the comparison to W&B (job type `test_vs_validation`), writes `test_vs_validation.md`, and fails the pipeline if either tolerance is exceeded.
+
+**Tolerances and why**
+
+| Check | Tolerance |
+|---|---|
+| Test MAE vs validation MAE | at most 10% higher |
+| Test r2 vs validation r2 | at most 0.05 lower |
+
+- The validation and test sets are stratified random splits of the same cleaned data, so without overfitting their metrics should differ only by sampling noise.
+- I bootstrapped both sets (about 3,000 validation and 3,800 test rows): the standard error is about $0.55 for MAE and about 0.012 for r2 on each set, so about $0.8 and 0.017 for the difference between them.
+- A 10% MAE increase (about $3.40 per night at the current MAE of about $34) and a 0.05 r2 drop are both roughly 3 to 4 standard errors. Normal sampling noise passes, while a real loss of generalization fails.
+- From the business side, a typical error that grows by more than about $3 per night on a $10 to $350 price range would noticeably weaken pricing recommendations, so it should block the weekly release.
+
+The latest result is in [`test_vs_validation.md`](test_vs_validation.md).
